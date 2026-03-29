@@ -1,7 +1,12 @@
 import threading
-from server import run_server
-from ui import run_ui
+import time
+import server
+import client
 
 if __name__ == "__main__":
-    threading.Thread(target=run_server, daemon=True).start()
-    run_ui()
+    # 启动后端服务
+    threading.Thread(target=server.run_server, daemon=True).start()
+    time.sleep(1)  # 等待服务启动
+
+    # 启动客户端UI
+    client.run_client()
