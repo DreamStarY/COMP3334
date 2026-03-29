@@ -9,28 +9,24 @@ from cryptography.hazmat.primitives import serialization
 app = Flask(__name__)
 CORS(app)
 
-# 全局随机 OTP
 current_random_otp = "------"
 
-# 初始化数据库
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, 
-                  hashed_pw TEXT, 
-                  private_key TEXT, 
+                 (username TEXT PRIMARY KEY,
+                  hashed_pw TEXT,
+                  private_key TEXT,
                   public_key TEXT)''')
     conn.commit()
     conn.close()
 
-# 生成 随机 6 位 OTP
 def generate_random_otp():
     global current_random_otp
     current_random_otp = f"{random.randint(0, 999999):06d}"
     return current_random_otp
 
-# 生成 RSA 密钥对（公钥 + 私钥）
 def generate_key_pair():
     private_key = rsa.generate_private_key(
         public_exponent=65537,
@@ -38,7 +34,6 @@ def generate_key_pair():
     )
     public_key = private_key.public_key()
 
-    # 转成字符串存储
     pri_key = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
@@ -52,12 +47,20 @@ def generate_key_pair():
 
     return pri_key, pub_key
 
-# ====================== 注册：生成密钥对并保存 ======================
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
-    username = data.get("username")
-    password = data.get("password")
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    # ======================
+    # 强制密码 >8 位
+    # ======================
+    if len(password) <= 8:
+        return jsonify({
+            "status": "error",
+            "msg": "密码长度必须大于8位，请重新输入"
+        })
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -67,11 +70,8 @@ def register():
         return jsonify({"status": "error", "msg": "用户名已存在"})
 
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    
-    # 生成 公钥 + 私钥
     private_key, public_key = generate_key_pair()
 
-    # 一起存入数据库
     c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
               (username, hashed_pw, private_key, public_key))
     conn.commit()
@@ -79,7 +79,6 @@ def register():
 
     return jsonify({"status": "ok", "msg": "注册成功"})
 
-# ====================== 登录验证 ======================
 @app.route("/login", methods=["POST"])
 def login():
     u = request.json.get("username")
@@ -101,7 +100,6 @@ def login():
 
     return jsonify({"status": "ok", "msg": "登录成功"})
 
-# 获取随机 OTP
 @app.route("/get-otp", methods=["POST"])
 def get_otp():
     return jsonify({"otp": current_random_otp})
