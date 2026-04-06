@@ -1,12 +1,13 @@
 import sqlite3
 
 class FriendManager:
-    def __init__(self, db_path='im_system.db'):
+    def __init__(self, db_path='im_system.db', users_db_path='users.db'):
         """
         初始化 FriendManager 并设置数据库路径。
         在实际的系统中，这里的 db_path 应该通过配置文件或全局变量传入。
         """
         self.db_path = db_path
+        self.users_db_path = users_db_path
 
     # ==========================================
     # [R13, R14, R15] 创建底层好友关系表
@@ -29,6 +30,7 @@ class FriendManager:
                     status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'BLOCKED')
                 ),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 -- 确保同一对标识符之间不会重复发起请求
                 UNIQUE(user_identifier, friend_identifier)
             )
@@ -47,22 +49,28 @@ class FriendManager:
         :param sender_id: 发送者 ID
         :param target_info: 用户输入的字符串（可能是用户名、邮箱或在线临时联系码）
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
+        # Query users from users.db to find target
+        users_conn = sqlite3.connect(self.users_db_path)
+        users_cursor = users_conn.cursor()
+        
         try:
-            # 1. 查 username 和 contact_code
-            cursor.execute('''
-                SELECT id FROM users 
-                WHERE username = ? OR contact_code = ?
-            ''', (target_info, target_info))
+            # 1. 查 username
+            users_cursor.execute('''
+                SELECT username FROM users 
+                WHERE username = ?
+            ''', (target_info,))
             
-            target = cursor.fetchone()
-
+            target = users_cursor.fetchone()
+            users_conn.close()
+            
             if not target:
                 return {"status": "error", "message": "No matching user found (please check that your username, email address, or contact code is valid)"}
-
+            
             target_id = target[0]
+            
+            # Now work with friendships table in im_system.db
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
 
             # 2. 不能加自己
             if sender_id == target_id:
@@ -137,7 +145,7 @@ class FriendManager:
         # 严格权限检查：WHERE 子句确保只有 friend_identifier (接收方) 能更新状态
         cursor.execute('''
             UPDATE friendships 
-            SET status = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = ?
             WHERE user_identifier = ? AND friend_identifier = ? AND status = 'PENDING'
         ''', (action, sender_identifier, my_identifier))
         
