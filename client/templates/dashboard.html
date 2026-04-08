@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% block title %}SecureChat - Dashboard{% endblock %}
+{% block content %}
+<header class="topbar card compact-card">
+  <div>
+    <div class="eyebrow">SecureChat Web UI</div>
+    <h1>{{ state.username }}</h1>
+    <div class="muted">Server: {{ state.server_url }}</div>
+  </div>
+  <div class="topbar-actions">
+    <form method="post" action="{{ url_for('sync_now') }}">
+      <input type="hidden" name="peer" value="{{ state.selected_peer }}">
+      <button type="submit">立即同步</button>
+    </form>
+    <form method="post" action="{{ url_for('logout') }}">
+      <button type="submit" class="danger">登出</button>
+    </form>
+  </div>
+</header>
+
+<div class="status-strip">
+  <div class="status-item card compact-card">
+    <div class="field-label">本机指纹</div>
+    <div class="mono">{{ state.local_fingerprint }}</div>
+  </div>
+  <div class="status-item card compact-card">
+    <div class="field-label">最近同步</div>
+    <div>{{ state.last_sync.summary }}</div>
+    {% if state.last_sync.warnings %}
+      <div class="warning-inline">{{ state.last_sync.warnings|length }} 条警告</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <aside class="card sidebar-card">
+    <div class="section-title-row">
+      <h2>会话列表</h2>
+      <span class="pill neutral">{{ state.contacts|length }} contacts</span>
+    </div>
+    {% if state.contacts %}
+      <div class="contact-list">
+        {% for item in state.contacts %}
+          <a href="{{ url_for('dashboard', peer=item.username) }}" class="contact-row {% if item.username == state.selected_peer %}active{% endif %}">
+            <div>
+              <div class="contact-name">{{ item.username }}</div>
+              <div class="contact-time muted">{{ item.last_activity or '暂无消息' }}</div>
+            </div>
+            <div class="contact-badges">
+              {% if item.unread_count %}<span class="pill unread">{{ item.unread_count }} unread</span>{% endif %}
+              {% if item.verified %}<span class="pill success">已验证</span>{% endif %}
+              {% if item.key_changed %}<span class="pill warning">密钥变化</span>{% endif %}
+              {% if item.blocked %}<span class="pill danger">blocked</span>{% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-state">还没有联系人。先在右下区域搜索用户并发送好友请求。</p>
+    {% endif %}
+  </aside>
+
+  <main class="main-column">
+    <section class="card chat-card">
+      <div class="section-title-row chat-heading">
+        <div>
+          <h2>{% if state.selected_peer %}与 {{ state.selected_peer }} 的聊天{% else %}请选择联系人{% endif %}</h2>
+          {% if state.selected_contact %}
+            <div class="muted">当前指纹：<span class="mono small">{{ state.selected_contact.current_key_fingerprint|fp }}</span></div>
+          {% endif %}
+        </div>
+        {% if state.selected_peer and state.has_more_history %}
+          <a class="secondary-link" href="{{ url_for('dashboard', peer=state.selected_peer, offset=state.page_offset + state.page_limit) }}">加载更早消息</a>
+        {% endif %}
+      </div>
+
+      {% if state.selected_peer %}
+        <div class="chat-log">
+          {% if state.messages %}
+            {% for msg in state.messages %}
+              <article class="message-bubble {{ msg.direction }}">
+                <div class="message-head">
+                  <strong>{{ '我' if msg.direction == 'outgoing' else state.selected_peer }}</strong>
+                  <span class="muted">{{ msg.sent_at }}</span>
+                </div>
+                <div class="message-body">{{ msg.body }}</div>
+                <div class="message-meta">
+                  {% if msg.direction == 'outgoing' %}<span class="pill neutral">{{ msg.status }}</span>{% endif %}
+                  {% if msg.expires_at %}<span class="pill warning">expires {{ msg.expires_at }}</span>{% endif %}
+                  <span class="pill neutral">ctr {{ msg.counter }}</span>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p class="empty-state">暂时没有消息。发送第一条加密消息吧。</p>
+          {% endif %}
+        </div>
+
+        <form method="post" action="{{ url_for('send_message') }}" class="composer">
+          <input type="hidden" name="peer" value="{{ state.selected_peer }}">
+          <label class="grow">
+            <span>消息内容</span>
+            <textarea name="text" rows="3" required placeholder="输入要发送给 {{ state.selected_peer }} 的消息"></textarea>
+          </label>
+          <label>
+            <span>TTL（秒，可选）</span>
+            <input type="number" name="ttl_seconds" min="1" placeholder="例如 30 / 600">
+          </label>
+          <button type="submit">发送端到端加密消息</button>
+        </form>
+      {% else %}
+        <p class="empty-state large-empty">从左侧选择联系人后，这里会显示分页消息历史、状态与 TTL 信息。</p>
+      {% endif %}
+    </section>
+
+    <div class="three-col">
+      <section class="card">
+        <div class="section-title-row">
+          <h2>好友请求</h2>
+          <span class="pill neutral">{{ state.incoming_requests|length }} incoming / {{ state.outgoing_requests|length }} outgoing</span>
+        </div>
+        <div class="request-group">
+          <h3>Incoming</h3>
+          {% if state.incoming_requests %}
+            {% for req in state.incoming_requests %}
+              <div class="request-row">
+                <div>#{{ req.id }} from <strong>{{ req.username }}</strong></div>
+                <div class="inline-actions">
+                  <form method="post" action="{{ url_for('request_action', request_id=req.id, action='accept') }}"><button type="submit">接受</button></form>
+                  <form method="post" action="{{ url_for('request_action', request_id=req.id, action='reject') }}"><button type="submit" class="danger ghost">拒绝</button></form>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="empty-inline">暂无 incoming 请求</p>
+          {% endif %}
+        </div>
+        <div class="request-group">
+          <h3>Outgoing</h3>
+          {% if state.outgoing_requests %}
+            {% for req in state.outgoing_requests %}
+              <div class="request-row">
+                <div>#{{ req.id }} to <strong>{{ req.username }}</strong></div>
+                <form method="post" action="{{ url_for('request_action', request_id=req.id, action='cancel') }}"><button type="submit" class="ghost">取消</button></form>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="empty-inline">暂无 outgoing 请求</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>搜索用户 / 添加联系人</h2>
+        <form method="get" action="{{ url_for('dashboard') }}" class="stack-form compact-form">
+          <input type="hidden" name="peer" value="{{ state.selected_peer }}">
+          <label>
+            <span>用户名关键字</span>
+            <input type="text" name="search" value="{{ state.search_query }}" placeholder="例如 alice / bob">
+          </label>
+          <button type="submit">搜索</button>
+        </form>
+        {% if state.search_query %}
+          <div class="search-results">
+            {% if state.search_results %}
+              {% for name in state.search_results %}
+                <div class="request-row">
+                  <div><strong>{{ name }}</strong></div>
+                  <form method="post" action="{{ url_for('send_friend_request') }}">
+                    <input type="hidden" name="target_username" value="{{ name }}">
+                    <input type="hidden" name="search_query" value="{{ state.search_query }}">
+                    <button type="submit">发送请求</button>
+                  </form>
+                </div>
+              {% endfor %}
+            {% else %}
+              <p class="empty-inline">无匹配用户</p>
+            {% endif %}
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="card">
+        <h2>联系人安全与管理</h2>
+        {% if state.selected_contact %}
+          <div class="security-grid">
+            <div>
+              <div class="field-label">联系人</div>
+              <div>{{ state.selected_contact.username }}</div>
+            </div>
+            <div>
+              <div class="field-label">当前指纹</div>
+              <div class="mono small">{{ state.selected_contact.current_key_fingerprint|fp }}</div>
+            </div>
+            <div>
+              <div class="field-label">已信任指纹</div>
+              <div class="mono small">{{ state.selected_contact.trusted_key_fingerprint|fp }}</div>
+            </div>
+            <div>
+              <div class="field-label">状态</div>
+              <div>
+                {% if state.selected_contact.verified %}<span class="pill success">已验证</span>{% endif %}
+                {% if state.selected_contact.key_changed %}<span class="pill warning">密钥变化</span>{% endif %}
+                {% if state.selected_contact.blocked %}<span class="pill danger">blocked</span>{% endif %}
+                {% if not state.selected_contact.verified and not state.selected_contact.key_changed and not state.selected_contact.blocked %}<span class="pill neutral">normal</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="action-grid">
+            <form method="post" action="{{ url_for('contact_action', username=state.selected_contact.username, action='verify') }}"><button type="submit">标记为已验证</button></form>
+            <form method="post" action="{{ url_for('contact_action', username=state.selected_contact.username, action='trust') }}"><button type="submit" class="ghost">信任新密钥</button></form>
+            <form method="post" action="{{ url_for('contact_action', username=state.selected_contact.username, action='block') }}"><button type="submit" class="danger ghost">拉黑</button></form>
+            <form method="post" action="{{ url_for('contact_action', username=state.selected_contact.username, action='unblock') }}"><button type="submit" class="ghost">解除拉黑</button></form>
+            <form method="post" action="{{ url_for('contact_action', username=state.selected_contact.username, action='remove') }}"><button type="submit" class="danger">删除好友</button></form>
+          </div>
+        {% else %}
+          <p class="empty-state">选择联系人后，这里会显示当前指纹、已信任指纹以及验证 / trust-new-key / 拉黑 / 删除等操作。</p>
+        {% endif %}
+        <hr>
+        <form method="post" action="{{ url_for('rotate_keys') }}" class="stack-form compact-form">
+          <label>
+            <span>用当前密码轮换本机密钥（演示功能）</span>
+            <input type="password" name="password" required>
+          </label>
+          <button type="submit" class="ghost">轮换本机密钥</button>
+        </form>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>System / Sync Log</h2>
+      {% if state.event_log %}
+        <div class="log-list">
+          {% for event in state.event_log %}
+            <div class="log-row">
+              <span class="log-time">{{ event.at }}</span>
+              <span>{{ event.message }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-inline">暂无日志</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+{% endblock %}

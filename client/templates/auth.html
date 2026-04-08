@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}SecureChat - 登录 / 注册{% endblock %}
+{% block content %}
+<div class="hero-card">
+  <div>
+    <div class="eyebrow">COMP3334 SecureChat</div>
+    <h1>本地 Web UI 客户端</h1>
+    <p class="muted">
+      该界面运行在你本机浏览器中，但端到端加密与私钥仍在本地 Python 客户端中完成。
+      服务器只看到 TLS 保护下的认证请求与密文消息，无法解密聊天内容。
+    </p>
+  </div>
+  <div class="meta-grid">
+    <div class="meta-item">
+      <span class="meta-label">远端 IM 服务器</span>
+      <span class="meta-value">{{ server_url }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">本地状态目录</span>
+      <span class="meta-value">{{ state_root }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="two-col auth-layout">
+  <section class="card">
+    <h2>注册</h2>
+    <form method="post" action="{{ url_for('register') }}" class="stack-form">
+      {% if register_error %}
+      <div class="inline-alert inline-alert-error">注册失败：{{ register_error }}</div>
+      {% endif %}
+      <label>
+        <span>用户名</span>
+        <input type="text" name="username" value="{{ prefill_username or '' }}" pattern="[a-zA-Z0-9_.-]{3,32}" title="3-32 位，只能包含字母、数字、下划线、点、连字符" required>
+      </label>
+      <label>
+        <span>密码</span>
+        <input type="password" name="password" minlength="10" title="至少 10 位，且同时包含大小写字母和数字" required>
+      </label>
+      <button type="submit">创建账户并生成本机身份密钥</button>
+    </form>
+    <p class="helper-text">注册时会在本地生成 Ed25519 + X25519 身份密钥，并返回 OTP secret 供认证器导入。用户名需为 3-32 位，只能包含字母、数字、下划线、点、连字符；密码至少 10 位，且需同时包含大小写字母和数字。</p>
+  </section>
+
+  <section class="card">
+    <h2>登录</h2>
+    <form method="post" action="{{ url_for('login') }}" class="stack-form">
+      {% if login_error %}
+      <div class="inline-alert inline-alert-error">登录失败：{{ login_error }}</div>
+      {% endif %}
+      <label>
+        <span>用户名</span>
+        <input type="text" name="username" value="{{ prefill_username or '' }}" required>
+      </label>
+      <label>
+        <span>密码</span>
+        <input type="password" name="password" required>
+      </label>
+      <label>
+        <span>OTP</span>
+        <input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      <button type="submit">登录到本地 Web UI</button>
+    </form>
+    <p class="helper-text">登录时会校验密码、TOTP，以及本地设备密钥是否与服务器记录一致。</p>
+  </section>
+</div>
+
+{% if registration_result %}
+<section class="card otp-card">
+  <h2>注册成功</h2>
+  <div class="otp-grid">
+    <div>
+      <div class="field-label">OTP Secret</div>
+      <code class="code-block">{{ registration_result.otp_secret }}</code>
+    </div>
+    <div>
+      <div class="field-label">Provisioning URI</div>
+      <code class="code-block multiline">{{ registration_result.otp_provisioning_uri }}</code>
+    </div>
+  </div>
+  <p class="helper-text">请把上面的 secret 或 URI 导入 Google Authenticator / Microsoft Authenticator 等应用，再返回上方登录。</p>
+</section>
+{% endif %}
+{% endblock %}
